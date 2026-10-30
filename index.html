@@ -1,0 +1,589 @@
+<!doctype html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#121212">
+<title>Карта загроз</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+  :root { --bg:#121212; --card:#1c1c1e; --txt:#ececec; --mut:#9a9a9f; --red:#ff1744; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin:0; height:100%; background:var(--bg); color:var(--txt);
+    font:14px/1.35 -apple-system, "Segoe UI", Roboto, sans-serif; overscroll-behavior:none; }
+  #map { position:fixed; inset:0; background:var(--bg); }
+  .leaflet-container { background:#141414; }
+  .bar { position:fixed; left:8px; right:8px; top:calc(8px + env(safe-area-inset-top)); z-index:1000;
+    background:rgba(28,28,30,.88); backdrop-filter:blur(8px); border:1px solid #2c2c2e; border-radius:14px;
+    padding:8px 10px; display:flex; align-items:center; gap:8px; }
+  .bar .t { font-weight:700; }
+  .bar .s { color:var(--mut); font-size:12px; flex:1; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .dot { width:9px; height:9px; border-radius:50%; background:#777; flex:none; }
+  .dot.ok { background:#00e676; } .dot.bad { background:#ff5252; }
+  .ai { margin-left:8px; padding:1px 7px; border-radius:9px; font-size:12px; white-space:nowrap; background:#2c2c2e; color:#9a9a9f; }
+  .ai.ok { background:#0f3d28; color:#6ee7a8; } .ai.warn { background:#4a3a0c; color:#ffd166; } .ai.bad { background:#4a1717; color:#ff8a8a; }
+  .btn { background:#232325; border:1px solid #3a3a3c; color:var(--txt); border-radius:10px;
+    width:38px; height:38px; font-size:18px; flex:none; display:grid; place-items:center; }
+  .btn:active { background:#3a3a3c80; }
+  .fab { position:fixed; right:10px; z-index:1000; }
+  #locBtn { bottom:calc(18px + env(safe-area-inset-bottom)); }
+  #legBtn { bottom:calc(64px + env(safe-area-inset-bottom)); }
+  #alerts { position:fixed; left:8px; right:8px; top:calc(62px + env(safe-area-inset-top)); z-index:999;
+    display:none; background:rgba(183,28,28,.92); color:#fff; border-radius:12px; padding:6px 10px; font-size:12.5px; font-weight:600; }
+  #legend { position:fixed; left:8px; right:8px; bottom:calc(8px + env(safe-area-inset-bottom)); z-index:1001; display:none;
+    background:rgba(28,28,30,.96); border:1px solid #2c2c2e; border-radius:14px; padding:10px; max-height:55vh; overflow:auto; }
+  #legend .row { display:flex; align-items:center; gap:10px; padding:4px 0; }
+  #legend .row svg { width:30px; height:30px; flex:none; }
+  #legend h4 { margin:0 0 6px; font-size:13px; }
+  #legend .x { position:absolute; right:10px; top:6px; background:none; border:0; color:var(--mut); font-size:20px; }
+  .swatch { width:30px; height:18px; border-radius:4px; background:rgba(183,28,28,.7); border:1px solid #ef5350; flex:none; }
+  .swatch.occ { background:rgba(255,138,128,.38); border-color:#7a4a47; }
+  .ai { cursor:pointer; }
+  #aiModal { position:fixed; inset:0; z-index:2000; display:none; background:rgba(0,0,0,.55); align-items:center; justify-content:center; padding:16px; }
+  #aiModal .box { background:var(--card); border:1px solid #3a3a3c; border-radius:16px; padding:16px; width:100%; max-width:380px; max-height:85vh; overflow:auto; position:relative; }
+  #aiModal h3 { margin:0 0 10px; font-size:16px; }
+  #aiModal .x { position:absolute; right:12px; top:8px; background:none; border:0; color:var(--mut); font-size:22px; }
+  #aiModal .st { display:inline-block; padding:2px 9px; border-radius:10px; font-size:12.5px; font-weight:600; margin-bottom:10px; }
+  #aiModal .st.ok { background:#0f3d28; color:#6ee7a8; } #aiModal .st.warn { background:#4a3a0c; color:#ffd166; } #aiModal .st.bad { background:#4a1717; color:#ff8a8a; } #aiModal .st.off { background:#2c2c2e; color:#9a9a9f; }
+  #aiModal .r { display:flex; justify-content:space-between; gap:12px; padding:5px 0; border-bottom:1px solid #2c2c2e; font-size:13px; }
+  #aiModal .r span:first-child { color:var(--mut); } #aiModal .r b { text-align:right; font-weight:600; }
+  #aiModal .note { color:var(--mut); font-size:12px; margin-top:10px; }
+  #aiModal pre { background:#141416; border-radius:8px; padding:8px; font-size:12px; white-space:pre-wrap; word-break:break-word; margin:8px 0 0; max-height:160px; overflow:auto; }
+  .pp .aiflag { font-weight:700; } .pp .aiflag.t { color:#6ee7a8; } .pp .aiflag.f { color:#ff8a8a; }
+
+  .dm { width:42px; height:42px; position:relative; }
+  .dm .ic { width:100%; height:100%; filter:drop-shadow(0 1px 2px rgba(0,0,0,.7)); transform-origin:50% 50%; }
+  .dm.fresh::after { content:""; position:absolute; inset:2px; border-radius:50%; border:1.5px solid rgba(255,255,255,.45);
+    animation:pulse 1.6s ease-out infinite; pointer-events:none; }
+  @keyframes pulse { from { transform:scale(.6); opacity:1; } to { transform:scale(1.5); opacity:0; } }
+  .me { width:16px; height:16px; border-radius:50%; background:#2979ff; border:3px solid #fff; box-shadow:0 0 0 6px rgba(41,121,255,.3); }
+  .cityLbl { background:none; border:0; box-shadow:none; color:#bdbdc2; font-size:11px; padding:0; text-shadow:0 0 3px #000, 0 0 3px #000; }
+  .cityLbl:before { display:none; }
+  .leaflet-popup-content-wrapper { background:var(--card); color:var(--txt); border-radius:14px; border:1px solid #3a3a3c; }
+  .leaflet-popup-tip { background:var(--card); }
+  .leaflet-popup-content { margin:12px 14px; min-width:210px; }
+  .pp h3 { margin:0 0 6px; font-size:15px; display:flex; align-items:center; gap:8px; }
+  .pp h3 svg { width:26px; height:26px; flex:none; }
+  .pp .m { color:var(--mut); font-size:12px; margin:2px 0; }
+  .pp .m b { color:var(--txt); font-weight:600; }
+  .pp .tx { background:#141416; border-radius:8px; padding:6px 8px; margin:6px 0; font-size:12.5px; white-space:pre-wrap; max-height:120px; overflow:auto; }
+  .pp a { color:#6ea8ff; }
+  .airbtn { flex:none; border:0; border-radius:10px; padding:6px 10px; font:700 12px/1 -apple-system, "Segoe UI", Roboto, sans-serif; color:#fff; cursor:pointer; white-space:nowrap; }
+  .airbtn.bal { background:#7f0000; box-shadow:0 0 0 0 rgba(255,23,68,.6); animation:airpulse 1.6s infinite; }
+  .airbtn.reg { background:#ff8a80; color:#3b0d0b; }
+  .airbtn.thr { background:#8d2a00; }
+  @keyframes airpulse { 0% { box-shadow:0 0 0 0 rgba(255,23,68,.6); } 70% { box-shadow:0 0 0 8px rgba(255,23,68,0); } 100% { box-shadow:0 0 0 0 rgba(255,23,68,0); } }
+  #airModal { position:fixed; inset:0; z-index:2100; display:none; background:rgba(0,0,0,.6); align-items:center; justify-content:center; padding:16px; }
+  #airModal .box { background:var(--card); border-radius:16px; padding:16px; width:100%; max-width:380px; max-height:85vh; overflow:auto; position:relative; border:2px solid #7f0000; }
+  #airModal .box.reg { border-color:#ff8a80; }
+  #airModal h3 { margin:0 0 8px; font-size:17px; }
+  #airModal .x { position:absolute; right:12px; top:8px; background:none; border:0; color:var(--mut); font-size:22px; }
+  #airModal .go { font-size:18px; font-weight:800; margin:8px 0; color:#ff8a8a; }
+  #airModal .box.reg .go { color:#ffab91; }
+  #airModal .r { display:flex; justify-content:space-between; gap:12px; padding:5px 0; border-bottom:1px solid #2c2c2e; font-size:13px; }
+  #airModal .r span:first-child { color:var(--mut); } #airModal .r b { text-align:right; font-weight:600; }
+  #airModal .note { color:var(--mut); font-size:12px; margin-top:10px; }
+  .pp .warnai { color:#ff5252; border:1px solid rgba(255,82,82,.55); background:rgba(255,23,68,.08); border-radius:8px; padding:4px 6px; margin:6px 0; font-size:11.5px; font-weight:600; text-align:center; }
+  .pp .life { height:4px; background:#2c2c2e; border-radius:3px; margin-top:6px; overflow:hidden; }
+  .pp .life i { display:block; height:100%; background:#ffab00; }
+  .leaflet-container a.leaflet-popup-close-button { color:var(--mut); }
+</style>
+</head>
+<body>
+<div id="map"></div>
+
+<div class="bar">
+  <span class="dot" id="dot"></span>
+  <span class="t">Карта загроз</span>
+  <span class="s" id="status">Завантаження…</span>
+  <span class="ai" id="ai" title="Статус ШІ-розбору">ШІ…</span>
+  <button class="airbtn" id="airBtn" hidden>Тривога</button>
+</div>
+<div id="alerts"></div>
+
+<button class="btn fab" id="legBtn" aria-label="Легенда">ℹ︎</button>
+<button class="btn fab" id="locBtn" aria-label="Моє місце">◎</button>
+
+<div id="legend">
+  <button class="x" id="legX">×</button>
+  <h4>Легенда</h4>
+  <div class="row"><span class="swatch"></span><span>Область з повітряною тривогою</span></div>
+  <div class="row"><span class="swatch occ"></span><span>Окуповані території</span></div>
+  <div id="legIcons"></div>
+  <div class="m" style="color:#9a9a9f;font-size:12px;margin-top:6px">Дані зникають з карти через 10 хвилин після повідомлення. Це не офіційне джерело — користуйтесь офіційними застосунками тривог.</div>
+</div>
+
+<div id="airModal"><div class="box"><button class="x" id="airX" aria-label="Закрити">×</button><div id="airBody"></div></div></div>
+<div id="aiModal"><div class="box"><button class="x" id="aiX" aria-label="Закрити">×</button><div id="aiBody"></div></div></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+// ====== настройки ======
+// Если сайт и сервер на одном адресе — оставь пусто. Иначе: index.html?api=https://my-app.onrender.com
+const API = (new URLSearchParams(location.search).get('api') || window.API_BASE || '').replace(/\/$/, '');
+const POLL_MS = 5000;   // обновление с сервера каждые 5 с (запрос лёгкий, без Telegram)
+const TTL_MS_DEFAULT = 10 * 60 * 1000;
+
+// ====== иконки дронов (SVG, нарисованы "носом вверх", поворачиваются по курсу) ======
+const ICONS = {
+  // Все значки нарисованы «носом вверх» и поворачиваются по курсу. "@" в svg заменяется цветом значка.
+  shahed:  { label:'Шахед / Герань-2', color:'#ffd54f',
+    svg:'<path d="M16 2.5 C16.9 2.5 17.3 4.5 17.8 7.5 L29.6 26.4 C30 27.1 29.6 27.6 28.8 27.5 L19.6 26 L18.2 29.2 L16 29.8 L13.8 29.2 L12.4 26 L3.2 27.5 C2.4 27.6 2 27.1 2.4 26.4 L14.2 7.5 C14.7 4.5 15.1 2.5 16 2.5Z"/>' },
+  geran3:  { label:'Герань-3 (реактивний)', color:'#ff8a3d',
+    svg:'<path d="M16 1.5 L17.7 8 L28.5 23.5 L28.5 26 L18.6 24.8 L18.2 29 L16 30.5 L13.8 29 L13.4 24.8 L3.5 26 L3.5 23.5 L14.3 8Z"/><path d="M14.6 12 H17.4 V20 H14.6Z" fill="#000" fill-opacity=".28" stroke="none"/>' },
+  geran4:  { label:'Герань-4 / 5 (реактивний)', color:'#ff5a36',
+    svg:'<path d="M16 1.5 L18.1 7 L30 21.5 L29.6 24.2 L19.2 22 L18.8 26 L22.6 29 L22.6 30.8 L16 29 L9.4 30.8 L9.4 29 L13.2 26 L12.8 22 L2.4 24.2 L2 21.5 L13.9 7Z"/>' },
+  lancet:  { label:'Ланцет', color:'#ffb300',
+    svg:'<path d="M16 1.5 L17.3 4 V28.8 L16 30.5 L14.7 28.8 V4Z"/><path d="M4.5 8.5 H27.5 V12.6 H4.5Z"/><path d="M9.5 23 H22.5 V26.2 H9.5Z"/>' },
+  molniya: { label:'Молнія', color:'#ff9800',
+    svg:'<path d="M16 2.8 C17.2 2.8 17.4 4.5 17.4 6 V26.5 L16 29 L14.6 26.5 V6 C14.6 4.5 14.8 2.8 16 2.8Z"/><path d="M2.5 10.5 H29.5 V15 H2.5Z"/><path d="M10.5 23.8 H21.5 V27 H10.5Z"/>' },
+  orlan:   { label:'Орлан-10', color:'#90caf9',
+    svg:'<path d="M16 2 L17.4 4.5 V25 H14.6 V4.5Z"/><path d="M2 9.2 H30 V13.4 H2Z"/><path d="M8.6 13 H10.6 V25.5 H8.6Z M21.4 13 H23.4 V25.5 H21.4Z"/><path d="M7 24.6 H25 V28 H7Z"/>' },
+  recon:   { label:'Розвідувальний (Zala/Supercam)', color:'#f5f5f5',
+    svg:'<path d="M16 2.2 C17 2.2 17.3 4 17.4 6.5 L17.4 10.2 L30.8 12.2 V14.6 L17.4 15.4 V24.8 L21.4 26.6 V28.4 L16 27.8 L10.6 28.4 V26.6 L14.6 24.8 V15.4 L1.2 14.6 V12.2 L14.6 10.2 L14.6 6.5 C14.7 4 15 2.2 16 2.2Z"/>' },
+  fpv:     { label:'FPV-дрон', color:'#9e9e9e',
+    svg:'<path d="M9.5 9.5 L22.5 22.5 M22.5 9.5 L9.5 22.5" stroke="@" stroke-opacity="1" stroke-width="2.4" fill="none"/><circle cx="7" cy="7" r="4.6" fill-opacity=".5"/><circle cx="25" cy="7" r="4.6" fill-opacity=".5"/><circle cx="7" cy="25" r="4.6" fill-opacity=".5"/><circle cx="25" cy="25" r="4.6" fill-opacity=".5"/><rect x="13.4" y="8.5" width="5.2" height="15" rx="2.6"/>' },
+  kab:     { label:'КАБ', color:'#b0bec5',
+    svg:'<path d="M16 2 C18.7 5 19.2 9 19.2 14 V21.5 H12.8 V14 C12.8 9 13.3 5 16 2Z"/><path d="M6.5 11.5 H12.8 V14.8 H6.5Z M19.2 11.5 H25.5 V14.8 H19.2Z"/><path d="M9.2 29.5 L12.8 21.5 H19.2 L22.8 29.5 L19.2 27.6 L16 30.5 L12.8 27.6Z"/>' },
+  missile: { label:'Ракета (тип невідомий)', color:'#ef5350',
+    svg:'<path d="M16 1.5 C17.9 4 18.1 7 18.1 10 V22 L23.8 28.2 V30.2 L18.1 27.8 L16 31 L13.9 27.8 L8.2 30.2 V28.2 L13.9 22 V10 C13.9 7 14.1 4 16 1.5Z"/><path d="M13.9 11 L10.6 14.6 V16 L13.9 14Z M18.1 11 L21.4 14.6 V16 L18.1 14Z"/>' },
+  bander:  { label:'Бандероль', color:'#ff3d2e',
+    svg:'<path d="M16 1.5 C17.5 3.5 17.7 6 17.7 9 V24.6 L20.6 28.4 V30.2 L16.9 28.8 L16 31 L15.1 28.8 L11.4 30.2 V28.4 L14.3 24.6 V9 C14.3 6 14.5 3.5 16 1.5Z"/><path d="M14.3 12.5 L5.4 20.8 V23 L14.3 18.8Z M17.7 12.5 L26.6 20.8 V23 L17.7 18.8Z"/>' },
+  ballistic: { label:'Балістика', color:'#ff1744',
+    svg:'<path d="M16 1 C17 4 17.6 7 17.6 10 V23 L21.2 28.6 V30.4 L17.2 28.4 L16 31 L14.8 28.4 L10.8 30.4 V28.6 L14.4 23 V10 C14.4 7 15 4 16 1Z"/>' },
+  mig31:   { label:'МіГ-31К (носій Кинджал)', color:'#e53935',
+    svg:'<path d="M16 1.5 C17.1 1.5 17.6 3.5 17.7 7 L17.8 12 L30.5 21.5 V24.2 L17.8 21.8 L17.9 26.5 L21.5 29.2 V30.8 L16 29.6 L10.5 30.8 V29.2 L14.1 26.5 L14.2 21.8 L1.5 24.2 V21.5 L14.2 12 L14.3 7 C14.4 3.5 14.9 1.5 16 1.5Z"/>' },
+  tel:     { label:'Пускова балістики (Крим)', color:'#e53935',
+    svg:'<path d="M2.5 20.5 H19 V24.5 H2.5Z"/><path d="M19 17.5 H25.5 L27.5 20.5 V24.5 H19Z"/><circle cx="6" cy="27" r="2.3"/><circle cx="13" cy="27" r="2.3"/><circle cx="22.5" cy="27" r="2.3"/><g transform="rotate(32 11 17)"><path d="M11 -1 L13.3 3.5 V16.5 H8.7 V3.5Z"/><path d="M8.7 11 L5.6 14.5 V16 H8.7Z M13.3 11 L16.4 14.5 V16 H13.3Z"/></g>' },
+  kinzhal: { label:'Кинджал', color:'#f50057',
+    svg:'<path d="M16 1 C17 3.5 17.5 6 17.5 8.5 V20 L26.2 28.6 V30.4 L17.5 27.2 L16 31 L14.5 27.2 L5.8 30.4 V28.6 L14.5 20 V8.5 C14.5 6 15 3.5 16 1Z"/><path d="M14.5 9.5 L11.2 12.4 V13.8 L14.5 12Z M17.5 9.5 L20.8 12.4 V13.8 L17.5 12Z"/>' },
+  zircon:  { label:'Циркон', color:'#00e5ff',
+    svg:'<path d="M16 1 C16.9 3.6 17.2 6 17.2 8.5 V24.2 L19.2 28 V29.6 L17 28.2 L16 31 L15 28.2 L12.8 29.6 V28 L14.8 24.2 V8.5 C14.8 6 15.1 3.6 16 1Z"/><path d="M14.8 12.5 L11.4 16.2 V17.4 L14.8 15.4Z M17.2 12.5 L20.6 16.2 V17.4 L17.2 15.4Z"/>' },
+  oreshnik:{ label:'Орешник', color:'#d500f9',
+    svg:'<path d="M16 1 C19 3.8 19.8 7 19.8 10 V22 L24.6 28.6 V30.4 L19.8 28 L16 31 L12.2 28 L7.4 30.4 V28.6 L12.2 22 V10 C12.2 7 13 3.8 16 1Z"/><path d="M12.2 12.2 H19.8 M12.2 17 H19.8" stroke="#000" stroke-opacity=".4" stroke-width="1.3" fill="none"/>' },
+  onyx:    { label:'Онікс', color:'#ffab40',
+    svg:'<path d="M16 1.5 C17.6 3.5 17.9 6 17.9 9 V24 L20.6 28.2 V30 L17 28.6 L16 31 L15 28.6 L11.4 30 V28.2 L14.1 24 V9 C14.1 6 14.4 3.5 16 1.5Z"/><path d="M14.1 14.5 L9.4 19.6 V22.2 L14.1 20.4Z M17.9 14.5 L22.6 19.6 V22.2 L17.9 20.4Z"/><path d="M14.4 18 H17.6 V23.5 H14.4Z" fill="#000" fill-opacity=".25" stroke="none"/>' },
+  kh22:    { label:'Х-22 / Х-32', color:'#ff6e40',
+    svg:'<path d="M16 1 C17.8 3.4 18.2 6 18.2 9 V16 L30 24.4 V27 L18.2 23.6 L18 27.2 L21.2 29.4 V31 L16 29.6 L10.8 31 V29.4 L14 27.2 L13.8 23.6 L2 27 V24.4 L13.8 16 V9 C13.8 6 14.2 3.4 16 1Z"/>' },
+  rszo:    { label:'РСЗО (загроза)', color:'#ffa726',
+    svg:'<path d="M11.2 2.5 H20.8 V8.2 H11.2Z"/><path d="M10 9.6 H22 V29.5 H10Z"/><path d="M8.2 11 H9.6 V15.6 H8.2Z M22.4 11 H23.8 V15.6 H22.4Z M8.2 22.4 H9.6 V27 H8.2Z M22.4 22.4 H23.8 V27 H22.4Z"/><path d="M13 12 V27.5 M16 12 V27.5 M19 12 V27.5" stroke="#000" stroke-opacity=".4" stroke-width="1.4" fill="none"/>' },
+  uav:     { label:'БПЛА (дрон)', color:'#cfd8dc',
+    svg:'<path d="M16 3.5 L27.5 27 L16 22.4 L4.5 27Z"/>' },
+};
+function iconSvg(type, size) {
+  const ic = ICONS[type] || ICONS.uav;
+  return `<svg viewBox="0 0 32 32" ${size ? `width="${size}" height="${size}"` : ''} fill="${ic.color}" stroke="#000" stroke-opacity=".3" stroke-width=".7" stroke-linejoin="round">${ic.svg.replace(/@/g, ic.color)}</svg>`;
+}
+document.getElementById('legIcons').innerHTML = Object.keys(ICONS).map(k =>
+  `<div class="row">${iconSvg(k)}<span>${ICONS[k].label}</span></div>`).join('');
+
+// ====== карта ======
+const map = L.map('map', { zoomControl:false, minZoom:5, maxZoom:12, worldCopyJump:false, preferCanvas:false, maxBounds:[[42.5,20.5],[53.5,41.5]], maxBoundsViscosity:.7 })
+  .setView([49.4, 34.0], 5);
+// Без тайлов: только контуры областей на тёмном фоне (минималистичный стиль)
+map.attributionControl.setPrefix(false);
+
+let META = null;
+let regionRes = [];
+const regionLayers = {};       // id -> [layers]
+let alertIds = new Set();
+
+function norm(s) { return String(s).toLowerCase().replace(/ʼ|’|`/g, "'"); }
+function regionIdFor(props) {
+  const keys = ['name', 'name:uk', 'name_uk', 'shapeName', 'NAME_1', 'name_en', 'name:en', 'name:ru', 'name_ru', 'NAME', 'admin1Name'];
+  const vals = [];
+  for (const k of keys) if (typeof props[k] === 'string') vals.push(props[k]);
+  for (const k of Object.keys(props)) if (typeof props[k] === 'string' && !keys.includes(k)) vals.push(props[k]);
+  for (const v of vals) {
+    const n = norm(v).trim();
+    for (const r of regionRes) if (r.rx.test(n)) return r.id;
+  }
+  return null;
+}
+const OCC = new Set(['crimea', 'sevastopol', 'donetsk', 'luhansk']);   // окуповані території
+function regionStyle(id) {
+  if (alertIds.has(id)) return { color:'#ef5350', weight:1.2, fillColor:'#b71c1c', fillOpacity:.7 };
+  if (OCC.has(id)) return { color:'#6b4543', weight:1, fillColor:'#ff8a80', fillOpacity:.38 };
+  return { color:'#333336', weight:1, fillColor:'#232325', fillOpacity:1 };
+}
+function restyleRegions() {
+  for (const id in regionLayers) regionLayers[id].forEach(l => l.setStyle(regionStyle(id)));
+}
+
+async function loadMeta() {
+  META = await (await fetch(API + '/api/meta')).json();
+  regionRes = META.regions.map(r => ({ id:r.id, rx:new RegExp(r.re, 'i') }));
+  // порядок важен: Киевская область раньше города Киев — так они уже идут в списке
+  // города
+  const cityLayer = L.layerGroup().addTo(map);
+  META.cities.forEach(c => {
+    if (c.lat > 52.5 || c.lat < 44.3 && c.lng > 36) return; // РФ-точки не рисуем
+    if (c.lng > 41) return;
+    const m = L.circleMarker([c.lat, c.lng], { radius:2.2, color:'#8e8e93', weight:1, fillColor:'#8e8e93', fillOpacity:.9, interactive:false });
+    m.bindTooltip(c.name, { permanent:true, direction:'right', offset:[4, 0], className:'cityLbl' });
+    m._city = true;
+    cityLayer.addLayer(m);
+  });
+  function updLabels() {
+    const z = map.getZoom();
+    const big = ['Київ','Харків','Одеса','Дніпро','Львів','Запоріжжя','Миколаїв','Херсон','Полтава','Суми','Чернігів','Вінниця','Житомир','Черкаси'];
+    cityLayer.eachLayer(l => {
+      const name = l.getTooltip().getContent();
+      const isBig = big.includes(name);
+      const show = z >= 8 || (z >= 6 && isBig);
+      const dot = z >= 7 || isBig;
+      const tip = l.getTooltip();
+      if (tip && tip.getElement && tip.getElement()) tip.getElement().style.display = show ? '' : 'none';
+      l.setStyle({ opacity: dot ? 1 : 0, fillOpacity: dot ? .9 : 0 });
+      if (l._tipHidden !== !show) { l._tipHidden = !show; l.unbindTooltip(); l.bindTooltip(name, { permanent: show, direction:'right', offset:[4, 0], className:'cityLbl', opacity: show ? 1 : 0 }); }
+    });
+  }
+  map.on('zoomend', updLabels);
+  setTimeout(updLabels, 300);
+}
+
+async function loadGeo() {
+  const gj = await (await fetch(API + '/api/geojson')).json();
+  L.geoJSON(gj, {
+    style: f => {
+      const id = regionIdFor(f.properties || {});
+      f._rid = id;
+      return regionStyle(id);
+    },
+    onEachFeature: (f, layer) => {
+      const id = f._rid || regionIdFor(f.properties || {});
+      if (id) (regionLayers[id] = regionLayers[id] || []).push(layer);
+      const r = META.regions.find(x => x.id === id);
+      layer.on('click', () => {
+        const name = r ? r.name : (f.properties.name || f.properties.shapeName || 'Область');
+        const on = alertIds.has(id);
+        L.popup({ closeButton:false }).setLatLng(layer.getBounds().getCenter())
+          .setContent(`<div class="pp"><h3>${esc(name)}</h3><div class="m"><b>${on ? '🔴 Повітряна тривога' : '🟢 Тривоги немає'}</b></div></div>`).openOn(map);
+      });
+    }
+  }).addTo(map).bringToBack();
+  restyleRegions();
+}
+
+// ====== дроны ======
+const droneObjs = {};   // id -> { d, marker, line, arrow }
+let TTL = TTL_MS_DEFAULT;
+let serverSkew = 0;     // разница часов сервер/телефон
+
+function esc(s) { return String(s).replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c])); }
+const pad = n => String(n).padStart(2, '0');
+function hhmmss(ts) { const d = new Date(ts); return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`; }
+function ago(ms) {
+  const s = Math.max(0, Math.round(ms / 1000));
+  return s < 60 ? `${s} с тому` : `${Math.floor(s / 60)} хв ${pad(s % 60)} с тому`;
+}
+function nowSrv() { return Date.now() + serverSkew; }
+
+function popupHtml(d) {
+  const age = nowSrv() - d.ts;
+  const ttl = d.ttlMs || TTL;
+  const left = Math.max(0, ttl - age);
+  const dest = d.places && d.places.length ? d.places[d.places.length - 1] : '';
+  const origin = d.fromKind === 'text' ? (d.places[0] || '') : d.fromKind === 'heading' ? 'за курсом' : d.fromKind === 'origin' ? 'звідки (ціль невідома)' : 'кордон / точка запуску (приблизно)';
+  const route = (d.fromKind === 'launcher' || d.fromKind === 'circle') ? `Місце: ${esc(dest)}` : d.fromKind === 'origin' ? `Звідки: ${esc(dest)}, ціль невідома`
+    : dest ? `${esc(origin)} → ${esc(dest)}${d.approx ? ' (приблизно, по області)' : ''}` : '';
+  const f = flightProgress(d);
+  const flight = d.fromKind === 'launcher' ? 'Стоїть на позиції (не рухається)' : d.fromKind === 'circle' ? `Кружляє по колу ≈${d.orbitKm} км від центру (до 5 хв)` : d.fromLat == null ? '' : (f >= 1
+    ? 'Досяг району цілі'
+    : `У польоті, до цілі ≈ ${Math.max(1, Math.round((1 - f) * FLIGHT_MS / 1000))} с`);
+  return `<div class="pp">
+    <h3>${iconSvg(iconKey(d), 26)}<span>${esc(d.label)}</span></h3>
+    <div class="warnai">🔴 Нейромережа може помилятися і показувати не те місто 🔴</div>
+    ${route ? `<div class="m">Маршрут: <b>${route}</b></div>` : ''}
+    ${flight ? `<div class="m">Стан: <b>${flight}</b></div>` : ''}
+    <div class="m">Перевірено ШІ: <span class="aiflag ${d.ai ? 't' : 'f'}">${d.ai ? 'true' : 'false'}</span></div>
+    <div class="m">Повідомлено: <b>${hhmmss(d.ts)}</b> (${ago(age)})</div>
+    <div class="tx">${esc(d.text)}</div>
+    <div class="m">Джерело: <a href="${esc(d.link)}" target="_blank" rel="noopener">t.me/${esc(d.src)}</a></div>
+    <div class="m">Зникне з карти через: <b>${Math.floor(left / 60000)}:${pad(Math.floor(left / 1000) % 60)}</b></div>
+    <div class="life"><i style="width:${(left / ttl * 100).toFixed(0)}%"></i></div>
+  </div>`;
+}
+
+const iconKey = d => d.icon || d.type;
+const colorOf = d => (ICONS[iconKey(d)] || ICONS.uav).color;
+function markerIcon(d) {
+  const rot = d.heading == null ? 0 : d.heading;
+  const fresh = (nowSrv() - d.ts) < 120000;
+  return L.divIcon({
+    className: '',
+    iconSize: [42, 42], iconAnchor: [21, 21], popupAnchor: [0, -18],
+    html: `<div class="dm ${fresh ? 'fresh' : ''}"><div class="ic" style="transform:rotate(${rot}deg)">${iconSvg(iconKey(d))}</div></div>`
+  });
+}
+
+// Полёт: значок стартует от границы (или города из текста) и за FLIGHT_MS долетает до цели.
+// Позиция считается по времени сообщения, поэтому при открытии позже дрон уже в нужном месте.
+let FLIGHT_MS = 60000;
+const ORBIT_MS = 60000;   // один круг «кружит на X» — 60 с
+function flightProgress(d) {
+  if (d.fromLat == null) return 1;
+  return Math.min(1, Math.max(0, (nowSrv() - d.ts) / FLIGHT_MS));
+}
+// радиус круга в метрах: 10 км, но не меньше ~26 пикселей, иначе на общей карте круг не виден
+function orbitRadiusM(d) {
+  const mpp = 156543.03 * Math.cos(d.toLat * Math.PI / 180) / Math.pow(2, map.getZoom());
+  return Math.max(d.orbitKm * 1000, 26 * mpp);
+}
+function posAt(d) {
+  if (d.orbitKm) {                                   // кружит по окружности вокруг центра
+    const a = 2 * Math.PI * (((nowSrv() - d.ts) / ORBIT_MS) % 1);
+    const R = orbitRadiusM(d), c = [d.toLat, d.toLng];
+    return [c[0] + R * Math.sin(a) / 111320, c[1] + R * Math.cos(a) / (111320 * Math.cos(c[0] * Math.PI / 180))];
+  }
+  const f = flightProgress(d);
+  if (d.fromLat == null) return [d.lat, d.lng];
+  return [d.fromLat + (d.toLat - d.fromLat) * f, d.fromLng + (d.toLng - d.fromLng) * f];
+}
+
+function upsertDrone(d) {
+  let o = droneObjs[d.id];
+  if (!o) {
+    const marker = L.marker(posAt(d), { icon: markerIcon(d), zIndexOffset: 1000 }).addTo(map);
+    marker.bindPopup(() => popupHtml(droneObjs[d.id].d), { autoPanPadding:[10, 70] });
+    if (d.fromKind === 'launcher') { marker.on('popupopen', () => showBlast(d.id)); marker.on('popupclose', () => hideBlast(d.id)); }
+    o = droneObjs[d.id] = { d, marker, line:null, ring:null };
+  } else {
+    o.d = d;
+    o.marker.setLatLng(posAt(d)).setIcon(markerIcon(d));
+  }
+  if (o.line) { map.removeLayer(o.line); o.line = null; }
+  if (o.ring) { map.removeLayer(o.ring); o.ring = null; }
+  if (d.orbitKm) o.ring = L.circle([d.toLat, d.toLng], { radius: orbitRadiusM(d), color: colorOf(d), weight:1, opacity:.5, dashArray:'4 6', fill:false, interactive:false }).addTo(map);
+  if (d.fromLat != null && (d.fromLat !== d.toLat || d.fromLng !== d.toLng)) {
+    o.line = L.polyline([[d.fromLat, d.fromLng], [d.toLat, d.toLng]], {
+      color: colorOf(d), weight:2, opacity:.85, dashArray:'6 6', interactive:false }).addTo(map);
+  }
+}
+// зона поражения пусковой: 10 км, раскрывается анимацией
+const BLAST_KM = 700;     // радиус зоны поражения в километрах (географический, не меняется при зуме)
+function showBlast(id) {
+  const o = droneObjs[id]; if (!o) return;
+  hideBlast(id);
+  const t0 = performance.now(), dur = 900;
+  o.blast = L.circle([o.d.lat, o.d.lng], { radius: 1, color:'#ff1744', weight:2, opacity:1, fillColor:'#ff1744', fillOpacity:.18, interactive:false }).addTo(map);
+  const step = now => {
+    const cur = droneObjs[id]; if (!cur || !cur.blast) return;
+    const f = Math.min(1, (now - t0) / dur), e = 1 - Math.pow(1 - f, 3);
+    cur.blast.setRadius(Math.max(1, e * BLAST_KM * 1000));
+  };
+  o.blastAnim = true;
+  const stepWrap = now => { step(now); const cur = droneObjs[id]; if (cur && cur.blast && (now - t0) < dur) requestAnimationFrame(stepWrap); else if (cur) cur.blastAnim = false; };
+  requestAnimationFrame(stepWrap);
+}
+function hideBlast(id) {
+  const o = droneObjs[id]; if (!o || !o.blast) return;
+  map.removeLayer(o.blast); o.blast = null;
+}
+function removeDrone(id) {
+  const o = droneObjs[id]; if (!o) return;
+  map.removeLayer(o.marker); if (o.line) map.removeLayer(o.line); if (o.ring) map.removeLayer(o.ring); if (o.blast) map.removeLayer(o.blast);
+  delete droneObjs[id];
+}
+
+function tick() { // раз в секунду: стираем старше 10 минут, затемняем, обновляем открытый попап
+  const t = nowSrv();
+  for (const id of Object.keys(droneObjs)) {
+    const o = droneObjs[id], age = t - o.d.ts, ttl = o.d.ttlMs || TTL;
+    if (age > ttl) { removeDrone(id); continue; }
+    const op = Math.max(.45, 1 - age / ttl * .55);
+    o.marker.setOpacity(op);
+    if (age < FLIGHT_MS + 1000 || o.d.orbitKm) o.marker.setLatLng(posAt(o.d)); // двигаем только пока летит
+    if (o.ring) o.ring.setRadius(orbitRadiusM(o.d));                             // круг держится в пикселях при зуме
+    if (o.line) o.line.setStyle({ opacity: op * .85 });
+    if (o.marker.isPopupOpen() && Math.floor(t / 1000) !== o._sec) { o._sec = Math.floor(t / 1000); o.marker.getPopup().setContent(popupHtml(o.d)); }
+  }
+  updateStatus();
+}
+
+// ====== опрос сервера ======
+let lastOk = 0, failing = false;
+let alertInfo = {}, ballistic = null, ballisticThreat = null;   // тревоги из /api/state
+function updateStatus() {
+  const n = Object.keys(droneObjs).length;
+  document.getElementById('dot').className = 'dot ' + (failing ? 'bad' : (lastOk ? 'ok' : ''));
+  document.getElementById('status').textContent = failing
+    ? 'Немає зв’язку з сервером'
+    : `Цілей: ${n} · тривог: ${alertIds.size} · оновлено ${lastOk ? hhmmss(lastOk) : '—'}`;
+}
+// ====== статус ИИ (бейдж рядом с заголовком) ======
+let lastAi = null;
+async function refreshAi() {
+  const el = document.getElementById('ai');
+  if (!el) return;
+  let a;
+  try { a = await (await fetch(API + '/api/ai', { cache:'no-store' })).json(); lastAi = a; }
+  catch (e) { lastAi = null; el.className = 'ai bad'; el.textContent = 'ШІ недоступний'; el.title = 'Не вдалося отримати /api/ai: ' + (e && e.message || e); setTimeout(refreshAi, 10000); return; }
+  if (!a.enabled) { el.className = 'ai'; el.textContent = 'ШІ выкл'; el.title = 'GEMINI_API_KEY не задан'; return; }
+  const mins = Math.ceil((a.pausedForSec || 0) / 60);
+  const errRecent = a.lastError && (a.lastOkAgoSec == null || (a.lastErrorAgoSec != null && a.lastErrorAgoSec < a.lastOkAgoSec));
+  const soft = a.pauseKind === 'overload' || a.pauseKind === 'quota';   // перегрузка/лимит — не ошибка, а пауза
+  if (a.pausedForSec > 0) { el.className = 'ai warn'; el.textContent = `ШІ пауза ${mins} хв`; el.title = 'Лимит или перегрузка Gemini: ' + (a.lastError || ''); }
+  else if (errRecent && soft) { el.className = 'ai warn'; el.textContent = 'ШІ перевантажений'; el.title = a.lastError || ''; }
+  else if (errRecent) { el.className = 'ai bad'; el.textContent = 'ШІ помилка'; el.title = a.lastError; }
+  else { el.className = 'ai ok'; el.textContent = 'ШІ працює'; el.title = `Модель ${a.model}, оброблено повідомлень: ${a.processedPosts}`; }
+}
+
+// ====== тревога: кнопка и окно ======
+function userRegion() {
+  if (!meMarker || !META) return null;
+  const ll = meMarker.getLatLng(); let best = null, bd = Infinity;
+  for (const r of META.regions) {
+    const d = (r.lat - ll.lat) ** 2 + ((r.lng - ll.lng) * 0.7) ** 2;   // грубо: ближайший центр области
+    if (d < bd) { bd = d; best = r; }
+  }
+  return best;
+}
+let airCtx = null;
+function updateAir() {
+  const btn = document.getElementById('airBtn');
+  const reg = userRegion();
+  if (ballistic) airCtx = { kind:'bal', since: ballistic.since, src: ballistic.src };
+  else if (ballisticThreat) airCtx = { kind:'thr', since: ballisticThreat.since, src: ballisticThreat.src, place: ballisticThreat.place };
+  else if (reg && alertIds.has(reg.id)) airCtx = { kind:'reg', region: reg, since: (alertInfo[reg.id] || {}).since, src: (alertInfo[reg.id] || {}).src };
+  else airCtx = null;
+  if (!airCtx) { btn.hidden = true; return; }
+  btn.hidden = false;
+  btn.className = 'airbtn ' + airCtx.kind;
+  btn.textContent = airCtx.kind === 'bal' ? 'Тривога по балістиці' : airCtx.kind === 'thr' ? 'Загроза балістики' : 'Повітряна тривога';
+  if (document.getElementById('airModal').style.display === 'flex') renderAir();
+}
+function renderAir() {
+  if (!airCtx) return;
+  const row = (k, v) => `<div class="r"><span>${k}</span><b>${v}</b></div>`;
+  const since = airCtx.since ? new Date(airCtx.since).toLocaleTimeString('uk-UA', { hour:'2-digit', minute:'2-digit', timeZone:'Europe/Kyiv' }) : '—';
+  const mins = airCtx.since ? Math.max(0, Math.round((Date.now() - airCtx.since) / 60000)) : 0;
+  const box = document.querySelector('#airModal .box');
+  box.className = 'box' + (airCtx.kind === 'reg' ? ' reg' : '');
+  const note = '<div class="note">Це не офіційне джерело. Слідкуйте за офіційними застосунками тривог.</div>';
+  const go = '<div class="go">Пройдіть в укриття</div>';
+  let body;
+  if (airCtx.kind === 'bal') body = `<h3>Тривога по балістиці</h3>${go}${row('Рівень', 'Екстрений')}${row('Інформація з', since)}${row('Джерело', 't.me/' + esc(airCtx.src))}${row('Триває', mins + ' хв')}`;
+  else if (airCtx.kind === 'thr') body = `<h3>Загроза балістики</h3>${go}${row('Рівень', 'Підвищений')}${row('Пускова', esc(airCtx.place || '—'))}${row('Інформація з', since)}${row('Джерело', 't.me/' + esc(airCtx.src))}${row('Триває', mins + ' хв')}`;
+  else body = `<h3>Повітряна тривога</h3>${go}${row('Рівень', 'Середній')}${row('Область', esc(airCtx.region.name))}${row('Інформація з', since)}${row('Триває', mins + ' хв')}`;
+  document.getElementById('airBody').innerHTML = body + note;
+}
+document.getElementById('airBtn').onclick = () => { renderAir(); document.getElementById('airModal').style.display = 'flex'; };
+document.getElementById('airX').onclick = () => document.getElementById('airModal').style.display = 'none';
+document.getElementById('airModal').onclick = e => { if (e.target.id === 'airModal') e.target.style.display = 'none'; };
+setInterval(() => { if (airCtx && document.getElementById('airModal').style.display === 'flex') renderAir(); }, 15000);
+
+// ====== окно со статусом ИИ (по клику на бейдж) ======
+function fmtDur(sec) {
+  sec = Math.max(0, Math.round(sec));
+  const h = Math.floor(sec / 3600), m = Math.floor(sec % 3600 / 60);
+  return h ? `${h} год ${m} хв` : `${Math.max(1, m)} хв`;
+}
+function kyivTime(offsetSec) {
+  return new Date(Date.now() + offsetSec * 1000).toLocaleTimeString('uk-UA', { hour:'2-digit', minute:'2-digit', timeZone:'Europe/Kyiv' });
+}
+function renderAiModal(a) {
+  const row = (k, v) => `<div class="r"><span>${k}</span><b>${v}</b></div>`;
+  const body = document.getElementById('aiBody');
+  if (!a) { body.innerHTML = '<h3>Штучний інтелект</h3><span class="st bad">Немає зв’язку</span><div class="note">Не вдалося отримати /api/ai — сайт не відповів. Спробуйте ще раз за хвилину.</div>'; return; }
+  if (!a.enabled) { body.innerHTML = '<h3>Штучний інтелект</h3><span class="st off">Вимкнено</span><div class="note">На сервері не задано GEMINI_API_KEY. Карта працює лише за правилами розбору.</div>'; return; }
+  const paused = a.pausedForSec > 0;
+  const quota = paused && a.pauseKind === 'quota';
+  const errRecent = a.lastError && (a.lastOkAgoSec == null || (a.lastErrorAgoSec != null && a.lastErrorAgoSec < a.lastOkAgoSec));
+  const left = Math.max(0, a.dailyLimit - a.requestsToday);
+  const rate = a.requestsLast3h / 3;                       // запитів на годину
+  const hoursLeft = rate > 0 ? left / rate : null;
+  const resetSec = a.quotaResetInSec;
+  let h = '<h3>Штучний інтелект (Gemini)</h3>';
+  if (quota) h += '<span class="st warn">Ліміт вичерпано</span>';
+  else if (paused || (errRecent && a.pauseKind === 'overload')) h += '<span class="st warn">Gemini перевантажений</span>';
+  else if (errRecent) h += '<span class="st bad">Помилка</span>';
+  else h += '<span class="st ok">Працює</span>';
+  h += row('Модель', a.model);
+  h += row('Запитів сьогодні', `${a.requestsToday} з ≈${a.dailyLimit}${a.limitIsEstimate ? ' (оцінка)' : ''}`);
+  h += row('Лишилось запитів', `≈${left}`);
+  h += row('Темп', rate > 0 ? `≈${rate.toFixed(1)} запитів/год` : 'немає запитів за 3 год');
+  if (quota) {
+    h += row('Пауза ще', fmtDur(a.pausedForSec));
+    h += row('Ліміт оновиться', `через ${fmtDur(resetSec)} (≈${kyivTime(resetSec)} за Києвом)`);
+  } else {
+    h += row('Вистачить приблизно на', hoursLeft == null ? `до оновлення ліміту (${fmtDur(resetSec)})` : fmtDur(Math.min(hoursLeft * 3600, resetSec)));
+    if (paused) h += row('Пауза ще', fmtDur(a.pausedForSec));
+  }
+  h += row('Оброблено постів', a.processedPosts);
+  h += row('Остання успішна відповідь', a.lastOkAgoSec == null ? '—' : fmtDur(a.lastOkAgoSec) + ' тому');
+  if (quota) h += '<div class="note"><b>Ліміт безкоштовного ключа вичерпано.</b> Поки пауза, карта працює за правилами розбору (без ШІ). Google обнуляє добовий ліміт опівночі за тихоокеанським часом.</div>';
+  else if (paused) h += '<div class="note">Gemini тимчасово перевантажений. Сервер сам повторить спробу, карта тим часом працює за правилами.</div>';
+  if (a.lastError && (quota || paused || errRecent)) h += `<div class="note">Деталі помилки (${fmtDur(a.lastErrorAgoSec || 0)} тому):</div><pre>${esc(a.lastError)}</pre>`;
+  h += '<div class="note">Лічильник запитів рахується з моменту запуску сервера. Реальний ліміт дивіться в aistudio.google.com; свій можна задати змінною GEMINI_DAILY_LIMIT.</div>';
+  body.innerHTML = h;
+}
+async function openAiModal() {
+  document.getElementById('aiModal').style.display = 'flex';
+  renderAiModal(lastAi);
+  await refreshAi();
+  if (document.getElementById('aiModal').style.display === 'flex') renderAiModal(lastAi);
+}
+document.getElementById('ai').onclick = openAiModal;
+document.getElementById('aiX').onclick = () => document.getElementById('aiModal').style.display = 'none';
+document.getElementById('aiModal').onclick = e => { if (e.target.id === 'aiModal') e.target.style.display = 'none'; };
+
+async function refresh() {
+  try {
+    const j = await (await fetch(API + '/api/state', { cache:'no-store' })).json();
+    serverSkew = j.now - Date.now();
+    TTL = j.ttlMs || TTL_MS_DEFAULT;
+    FLIGHT_MS = j.flightMs || FLIGHT_MS;
+    const ids = new Set();
+    j.drones.forEach(d => { if (j.now - d.ts <= (d.ttlMs || TTL)) { ids.add(d.id); upsertDrone(d); } });
+    Object.keys(droneObjs).forEach(id => { if (!ids.has(id)) removeDrone(id); });
+    alertIds = new Set(j.alerts.map(a => a.id));
+    alertInfo = Object.fromEntries(j.alerts.map(a => [a.id, a]));
+    ballistic = j.ballisticAlert || null;
+    ballisticThreat = j.ballisticLauncher || null;
+    updateAir();
+    restyleRegions();
+    const box = document.getElementById('alerts');
+    if (alertIds.size) {
+      box.style.display = 'block';
+      box.textContent = '🔴 Тривога: ' + [...alertIds].map(id => (META.regions.find(r => r.id === id) || {}).name || id).join(', ');
+    } else box.style.display = 'none';
+    lastOk = Date.now(); failing = false;
+  } catch (e) { failing = true; }
+  updateStatus();
+}
+
+// ====== моё местоположение ======
+let meMarker = null, firstFix = true;
+function startGeo() {
+  if (!navigator.geolocation) return;
+  navigator.geolocation.watchPosition(p => {
+    const ll = [p.coords.latitude, p.coords.longitude];
+    if (!meMarker) meMarker = L.marker(ll, { icon:L.divIcon({ className:'', html:'<div class="me"></div>', iconSize:[16, 16], iconAnchor:[8, 8] }), interactive:false, zIndexOffset:2000 }).addTo(map);
+    else meMarker.setLatLng(ll);
+    if (firstFix) { firstFix = false; map.setView(ll, 8); }
+  }, () => {}, { enableHighAccuracy:true, maximumAge:15000, timeout:20000 });
+}
+document.getElementById('locBtn').onclick = () => {
+  if (meMarker) map.setView(meMarker.getLatLng(), Math.max(map.getZoom(), 9));
+  else { firstFix = true; startGeo(); }
+};
+const leg = document.getElementById('legend');
+document.getElementById('legBtn').onclick = () => leg.style.display = leg.style.display === 'block' ? 'none' : 'block';
+document.getElementById('legX').onclick = () => leg.style.display = 'none';
+
+// ====== запуск ======
+(async () => {
+  try { await loadMeta(); } catch (e) { document.getElementById('status').textContent = 'Сервер недоступний'; }
+  loadGeo().catch(() => {});
+  startGeo();
+  await refresh();
+  setInterval(refresh, POLL_MS);
+  refreshAi(); setInterval(refreshAi, 30000); // статус ИИ раз в 30 с
+  setInterval(tick, 500);
+})();
+</script>
+</body>
+</html>
